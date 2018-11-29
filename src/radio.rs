@@ -1,16 +1,3 @@
-//! # The micro:bit radio
-//! 
-//! ```notrust
-//! Packet Spec:
-//! | 0              | 1 ... 4       | 5 ... 8           | 9 ... 28
-//! ----------------------------------------------------------------
-//! | packet type    | system time   | serial number     | payload
-//! ```
-//! 
-//! ## Reference
-//! https://github.com/lancaster-university/microbit-dal/blob/master/source/drivers/MicroBitRadio.cpp
-//! https://github.com/Microsoft/pxt-microbit/blob/master/libs/radio/radio.cpp
-
 use nrf51::{FICR, RADIO};
 use nrf51::radio::state::STATER;
 
@@ -45,12 +32,6 @@ impl Radio {
             );
             radio.crcpoly.write(|w| w.crcpoly().bits(CRC_POLY & 0xFFFFFF));
 
-            // Configure logical address 0 as the canonical advertising address.
-            // Base addresses are up to 32 bits in size. However, an 8 bit Address Prefix is
-            // *always* appended, so we must use a 24 bit Base Address and the 8 bit Prefix.
-            // BASE0 has, apparently, undocumented semantics: It is a proper 32-bit register, but
-            // it ignores the *lowest* 8 bit and instead transmits the upper 24 as the low 24 bits
-            // of the Access Address. Shift address up to fix this.
             radio.base0.write(|w| w.bits(ADVERTISING_ADDRESS << 8));
             radio.prefix0.write(|w| w.ap0().bits((ADVERTISING_ADDRESS >> 24) as u8));
         }
