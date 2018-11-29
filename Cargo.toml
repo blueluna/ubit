@@ -1,0 +1,12 @@
+[package]
+name = "microbit-radio"
+version = "0.1.0"
+authors = ["Erik Svensson <erik.public@gmail.com>"]
+
+[dependencies]
+nrf51 = "0.5"
+
+[dev-dependencies]
+microbit = "0.6"
+cortex-m-rt = "0.6"
+panic-halt = "0.2"
