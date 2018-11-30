@@ -46,8 +46,17 @@ const CLEAR: [[u8; 5]; 5] = [
     [0, 0, 0, 0, 0],
 ];
 
+const MID_DOTT: [[u8; 5]; 5] = [
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 1, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+];
+
 // static RADIO: Mutex<RefCell<Option<Radio>>> = Mutex::new(RefCell::new(None));
 static TIMER: Mutex<RefCell<Option<microbit::TIMER0>>> = Mutex::new(RefCell::new(None));
+static RTC: Mutex<RefCell<Option<microbit::RTC0>>> = Mutex::new(RefCell::new(None));
 static DISPLAY: Mutex<RefCell<Option<LedDisplay>>> = Mutex::new(RefCell::new(None));
 static STATE: Mutex<RefCell<Option<u8>>> = Mutex::new(RefCell::new(None));
 static TX: Mutex<RefCell<Option<serial::Tx<microbit::UART0>>>> = Mutex::new(RefCell::new(None));
@@ -63,13 +72,6 @@ fn main() -> ! {
         p.CLOCK.tasks_lfclkstart.write(|w| unsafe { w.bits(1) });
         while p.CLOCK.events_lfclkstarted.read().bits() == 0 {}
         p.CLOCK.events_lfclkstarted.write(|w| unsafe { w.bits(0) });
-
-        // Configure RTC with 125 ms resolution
-        p.RTC0.prescaler.write(|w| unsafe { w.bits(4095) });
-        // Enable interrupt for tick
-        p.RTC0.intenset.write(|w| w.tick().set_bit());
-        // Start counter
-        p.RTC0.tasks_start.write(|w| unsafe { w.bits(1) });
 
         cortex_m::interrupt::free(move |cs| {
             let gpio = p.GPIO.split();
@@ -99,6 +101,13 @@ fn main() -> ! {
             let display = LedDisplay::new(
                 col1, col2, col3, col4, col5, col6, col7, col8, col9, row1, row2, row3,
             );
+            // Configure RTC with 125 ms resolution 
+            p.RTC0.prescaler.write(|w| unsafe { w.bits(4095) });
+            // Enable interrupt for tick
+            p.RTC0.intenset.write(|w| w.tick().set_bit());
+            // Start counter
+            p.RTC0.tasks_start.write(|w| unsafe { w.bits(1) });
+
             // Configure a timer with 1us resolution
             p.TIMER0.bitmode.write(|w| w.bitmode()._32bit());
             p.TIMER0.prescaler.write(|w| unsafe { w.prescaler().bits(4) });
@@ -110,6 +119,7 @@ fn main() -> ! {
 
             // *RADIO.borrow(cs).borrow_mut() = Some(Radio::new(p.RADIO));
             *TIMER.borrow(cs).borrow_mut() = Some(p.TIMER0);
+            *RTC.borrow(cs).borrow_mut() = Some(p.RTC0);
             *DISPLAY.borrow(cs).borrow_mut() = Some(display);
             *STATE.borrow(cs).borrow_mut() = Some(0);
             *TX.borrow(cs).borrow_mut() = Some(serial_tx);
@@ -135,32 +145,40 @@ interrupt!(RTC0, rtc0_event);
 
 fn rtc0_event() {
     cortex_m::interrupt::free(|cs| {
-        if let (Some(s), Some(d)) = (
+        if let (Some(s), Some(d), Some(r)) = (
             STATE.borrow(cs).borrow_mut().deref_mut(),
-            DISPLAY.borrow(cs).borrow_mut().deref_mut()) {
-            d.display(LITTLE_HEART);
-            /*
+            DISPLAY.borrow(cs).borrow_mut().deref_mut(),
+            RTC.borrow(cs).borrow_mut().deref_mut()) {
+            r.events_tick.reset();
             *s = match *s {
                 0 => {
-                    d.display(LITTLE_HEART);
+                    d.display(MID_DOTT);
                     1
                 }
                 1 => {
-                    d.display(HEART);
+                    d.display(LITTLE_HEART);
                     2
                 }
                 2 => {
-                    d.display(LITTLE_HEART);
+                    d.display(HEART);
                     3
                 }
                 3 => {
+                    d.display(LITTLE_HEART);
+                    4
+                }
+                4 => {
+                    d.display(MID_DOTT);
+                    5
+                }
+                5 => {
                     d.display(CLEAR);
                     0
                 }
                 _ => {
                     0
                 }
-            }*/
+            }
         }
     });
 }

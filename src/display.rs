@@ -94,6 +94,9 @@ impl LedDisplay {
     }
 
     pub fn update_row(&mut self) {
+        for col_sig in self.cols.iter_mut() {
+            col_sig.set_high();
+        }
         // last row
         {
             let row_sig = self.rows.get_mut(self.row).unwrap();
