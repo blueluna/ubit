@@ -1,61 +1,72 @@
-use nrf51::{FICR, RADIO};
+use nrf51::RADIO;
 use nrf51::radio::state::STATER;
 
-use core::time::Duration;
+pub const BASE_ADDRESS: u32 = 0x75626974;
+pub const DEFAULT_GROUP: u8 = 0;
+pub const MAX_PACKET_SIZE: usize = 32;
+// pub const HEADER_SIZE: usize = 4;
+// pub const MAXIMUM_RX_BUFFERS: usize = 4;
+pub const CRC_POLY: u32 = 0x00011021;
+pub const CRC_PRESET: u32 = 0x0000ffff;
+pub const WHITENING_IV: u8 = 0x18;
 
-pub const MAX_PACKAGE_SIZE: usize = 64;
-
-pub type TransmitBuffer = [u8; MAX_PACKAGE_SIZE];
+pub type PacketBuffer = [u8; MAX_PACKET_SIZE];
 
 pub struct Radio {
     radio: RADIO,
-    rx_buf: &'static mut TransmitBuffer,
-    tx_buf: &'static mut TransmitBuffer,
+    rx_buf: PacketBuffer,
 }
 
 impl Radio {
-    pub fn new(radio: RADIO, ficr: &FICR, tx_buf: &'static mut TransmitBuffer) -> Self {
+    pub fn new(radio: RADIO) -> Self {
         assert!(radio.state.read().state().is_disabled());
 
-        radio.mode.write(|w| w.mode().ble_1mbit());
+        radio.mode.write(|w| w.mode().nrf_1mbit());
         radio.txpower.write(|w| w.txpower().pos4d_bm());
 
         unsafe {
+            // On-air package length field size, 8-bits
+            radio.pcnf0.write(|w| w.lflen().bits(8));
+            // Configure maximum package size
+            // Base address length, 5
+            // Enable whitening
             radio.pcnf1.write(|w| w
-                .maxlen().bits(MAX_PACKAGE_SIZE as u8)   // no packet length limit
-                .balen().bits(3)     // 3-Byte Base Address + 1-Byte Address Prefix
-                .whiteen().set_bit() // Enable Data Whitening over PDU+CRC
+                .maxlen().bits(MAX_PACKET_SIZE as u8)
+                .balen().bits(4)
+                .whiteen().set_bit()
             );
-            radio.crccnf.write(|w| w
-                .skipaddr().set_bit()   // skip address since only the S0, Length, S1 and Payload need CRC
-                .len().three()          // 3 Bytes = CRC24
-            );
-            radio.crcpoly.write(|w| w.crcpoly().bits(CRC_POLY & 0xFFFFFF));
+            // Initialise 16-bit CRC
+            radio.crccnf.write(|w| w.len().two());
+            radio.crcinit.write(|w| w.bits(CRC_PRESET));
+            radio.crcpoly.write(|w| w.crcpoly().bits(CRC_POLY & 0x0000ffff));
+            // Configure base address
+            radio.base0.write(|w| w.bits(BASE_ADDRESS << 8));
+            radio.prefix0.write(|w| w.ap0().bits(DEFAULT_GROUP));
 
-            radio.base0.write(|w| w.bits(ADVERTISING_ADDRESS << 8));
-            radio.prefix0.write(|w| w.ap0().bits((ADVERTISING_ADDRESS >> 24) as u8));
+            radio.datawhiteiv.write(|w|
+                w.datawhiteiv().bits(WHITENING_IV));
         }
 
-        unsafe {
-            radio.tifs.write(|w| w.tifs().bits(150));
-        }
-
-        // Configure shortcuts to simplify and speed up sending and receiving packets.
         radio.shorts.write(|w| w
-            .ready_start().enabled()    // start transmission/recv immediately after ramp-up
-            .end_disable().enabled()    // disable radio when transmission/recv is done
+            .ready_start().enabled()
+            .end_disable().enabled()
         );
-        // We can now start the TXEN/RXEN tasks and the radio will do the rest and return to the
-        // disabled state.
 
         Self {
             radio,
-            tx_buf,
+            rx_buf: [0u8; MAX_PACKET_SIZE],
         }
     }
 
     /// Returns the current radio state.
     pub fn state(&self) -> STATER {
         self.radio.state.read().state()
+    }
+
+    pub fn start_receive(&mut self)
+    {
+        let rx_buf = &mut self.rx_buf as *mut _ as u32;
+        self.radio.packetptr.write(|w| unsafe { w.bits(rx_buf) });
+        self.radio.rxaddresses.write(|w| w.addr1().enabled());
     }
 }

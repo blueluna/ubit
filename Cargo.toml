@@ -5,8 +5,10 @@ authors = ["Erik Svensson <erik.public@gmail.com>"]
 
 [dependencies]
 nrf51 = "0.5"
+nrf51-hal = "0.5"
 
 [dev-dependencies]
-microbit = "0.6"
+cortex-m = "0.5"
 cortex-m-rt = "0.6"
+microbit = "0.6"
 panic-halt = "0.2"
