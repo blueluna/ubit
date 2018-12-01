@@ -1,7 +1,14 @@
 [package]
-name = "microbit-radio"
-version = "0.1.0"
+name = "ubit"
+version = "0.0.1"
 authors = ["Erik Svensson <erik.public@gmail.com>"]
+categories = [ "hardware-support", "embedded", "no-std", ]
+description = "Things for the BBC Micro:bit"
+keywords = [ "arm", "cortex-m", "nrf51", ]
+license = "MIT"
+readme = "README.md"
+repository = "https://bitbucket.org/blueluna/ubit"
+
 
 [dependencies]
 nrf51 = "0.5"
