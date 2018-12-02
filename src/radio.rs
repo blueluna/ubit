@@ -1,3 +1,5 @@
+use core::convert::From;
+
 use nrf51::RADIO;
 use nrf51::radio::state::STATER;
 
@@ -12,6 +14,57 @@ pub const WHITENING_IV: u8 = 0x18;
 
 pub type PacketBuffer = [u8; MAX_PACKET_SIZE];
 
+enum PacketType {
+    Integer,
+    IntegerValue,
+    String,
+    Buffer,
+    Double,
+    DoubleValue,
+    None,
+}
+
+impl From<u8> for PacketType {
+    fn from(value: u8) -> PacketType {
+        match value {
+            0 => PacketType::Integer,
+            1 => PacketType::IntegerValue,
+            2 => PacketType::String,
+            3 => PacketType::Buffer,
+            4 => PacketType::Double,
+            5 => PacketType::DoubleValue,
+            _ => PacketType::None,
+        }
+    }
+}
+
+struct PacketHeader
+{
+    packet_type: PacketType,
+    time: u32,
+    serial: u32,
+}
+
+/// # The micro:bit radio
+/// 
+/// The goal is to be able to communicate with software written with MakeCode
+/// or similar.
+/// 
+/// The package format seems to be the following,
+/// 
+/// ```notrust
+/// Packet Spec:
+/// | 0           | 1 ... 4     | 5 ... 8       | 9 ... 28
+/// ------------------------------------------------------
+/// | packet type | system time | serial number | payload
+/// ```
+/// 
+/// The radio is configured as nrf24 1 mbit....
+/// 
+/// ## Reference
+/// 
+/// * <https://github.com/lancaster-university/microbit-dal/blob/master/source/drivers/MicroBitRadio.cpp>
+/// * <https://github.com/Microsoft/pxt-microbit/blob/master/libs/radio/radio.cpp>
 pub struct Radio {
     radio: RADIO,
     rx_buf: PacketBuffer,
@@ -68,5 +121,13 @@ impl Radio {
         let rx_buf = &mut self.rx_buf as *mut _ as u32;
         self.radio.packetptr.write(|w| unsafe { w.bits(rx_buf) });
         self.radio.rxaddresses.write(|w| w.addr1().enabled());
+        self.radio.intenset.write(|w| w.end().set());
+        self.radio.tasks_rxen.write(|w| unsafe { w.bits(1) });
+    }
+
+    pub fn receive(&mut self, dst: &mut PacketBuffer)
+    {
+        self.radio.events_end.reset();
+        dst.copy_from_slice(&self.rx_buf[..MAX_PACKET_SIZE]);
     }
 }

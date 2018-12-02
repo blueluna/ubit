@@ -7,6 +7,8 @@ use hal::gpio::gpio::{
 use hal::gpio::{Output, PushPull};
 use hal::prelude::*;
 
+pub mod images;
+
 type LED = PIN<Output<PushPull>>;
 type Image = [[u8; 5]; 5];
 type DisplayBuffer = [[u8; 9]; 3];
@@ -19,8 +21,8 @@ const LED_LAYOUT: [[(usize, usize); 5]; 5] = [
     [(2, 2), (1, 6), (2, 0), (1, 5), (2, 1)],
 ];
 
-/// Array of all the LEDs in the 5x5 display on the board
-pub struct LedDisplay {
+/// On-board 5x5 led matrix
+pub struct Display {
     rows: [LED; 3],
     cols: [LED; 9],
     row: usize,
@@ -29,7 +31,7 @@ pub struct LedDisplay {
     next_updated: bool,
 }
 
-impl LedDisplay {
+impl Display {
     /// Initializes all the user LEDs
     pub fn new(
         col1: PIN4<Output<PushPull>>,
@@ -45,7 +47,7 @@ impl LedDisplay {
         row2: PIN14<Output<PushPull>>,
         row3: PIN15<Output<PushPull>>,
     ) -> Self {
-        let mut retval = LedDisplay {
+        let mut retval = Display {
             rows: [row1.downgrade(), row2.downgrade(), row3.downgrade()],
             cols: [
                 col1.downgrade(),

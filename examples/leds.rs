@@ -19,65 +19,10 @@ use ubit::hal::prelude::*;
 use ubit::hal::serial;
 use ubit::hal::gpio::{Floating, Input};
 use ubit::hal::serial::BAUD115200;
+use ubit::leds::images;
 
-// use microbit_radio::Radio;
-use ubit::LedDisplay;
-
-const LITTLE_HEART: [[u8; 5]; 5] = [
-    [0, 0, 0, 0, 0],
-    [0, 1, 0, 1, 0],
-    [0, 1, 1, 1, 0],
-    [0, 0, 1, 0, 0],
-    [0, 0, 0, 0, 0],
-];
-
-const HEART: [[u8; 5]; 5] = [
-    [0, 1, 0, 1, 0],
-    [1, 1, 1, 1, 1],
-    [1, 1, 1, 1, 1],
-    [0, 1, 1, 1, 0],
-    [0, 0, 1, 0, 0],
-];
-
-const CLEAR: [[u8; 5]; 5] = [
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-];
-
-const MID_DOT: [[u8; 5]; 5] = [
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 1, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-];
-
-const GHOST: [[u8; 5]; 5] = [
-    [0, 1, 1, 1, 0],
-    [1, 0, 1, 0, 1],
-    [1, 1, 1, 1, 1],
-    [1, 1, 1, 1, 1],
-    [1, 0, 1, 0, 1],
-];
-
-const HAPPY: [[u8; 5]; 5] = [
-    [0, 1, 0, 1, 0],
-    [0, 1, 0, 1, 0],
-    [0, 0, 0, 0, 0],
-    [1, 0, 0, 0, 1],
-    [0, 1, 1, 1, 0],
-];
-
-const SAD: [[u8; 5]; 5] = [
-    [0, 1, 0, 1, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 1, 1, 1, 0],
-    [1, 0, 0, 0, 1],
-];
+use ubit::radio;
+use ubit::leds;
 
 struct ProgramState {
     state: u32,
@@ -90,10 +35,10 @@ struct ButtonState {
     button_b: microbit::hal::gpio::gpio::PIN26<Input<Floating>>,
 }
 
-// static RADIO: Mutex<RefCell<Option<Radio>>> = Mutex::new(RefCell::new(None));
+static RDIO: Mutex<RefCell<Option<radio::Radio>>> = Mutex::new(RefCell::new(None));
 static TIMER: Mutex<RefCell<Option<microbit::TIMER0>>> = Mutex::new(RefCell::new(None));
 static RTC: Mutex<RefCell<Option<microbit::RTC0>>> = Mutex::new(RefCell::new(None));
-static DISPLAY: Mutex<RefCell<Option<LedDisplay>>> = Mutex::new(RefCell::new(None));
+static DISPLAY: Mutex<RefCell<Option<leds::Display>>> = Mutex::new(RefCell::new(None));
 static STATE: Mutex<RefCell<Option<ProgramState>>> = Mutex::new(RefCell::new(None));
 static TX: Mutex<RefCell<Option<serial::Tx<microbit::UART0>>>> = Mutex::new(RefCell::new(None));
 static BTN: Mutex<RefCell<Option<ButtonState>>> = Mutex::new(RefCell::new(None));
@@ -144,7 +89,7 @@ fn main() -> ! {
             let col8 = gpio.pin11.into_push_pull_output();
             let col9 = gpio.pin12.into_push_pull_output();
 
-            let display = LedDisplay::new(
+            let display = leds::Display::new(
                 col1, col2, col3, col4, col5, col6, col7, col8, col9, row1, row2, row3,
             );
 
@@ -181,7 +126,10 @@ fn main() -> ! {
             p.TIMER0.cc[0].write(|w| unsafe { w.bits(2000) });
             p.TIMER0.tasks_start.write(|w| unsafe { w.bits(1) });
 
-            // *RADIO.borrow(cs).borrow_mut() = Some(Radio::new(p.RADIO));
+            let mut radio = radio::Radio::new(p.RADIO);
+            radio.start_receive();
+
+            *RDIO.borrow(cs).borrow_mut() = Some(radio);
             *TIMER.borrow(cs).borrow_mut() = Some(p.TIMER0);
             *STATE.borrow(cs).borrow_mut() = Some(ProgramState { state: 0, tick: 0 });
         });
@@ -195,16 +143,14 @@ fn main() -> ! {
             nrf51::NVIC::unpend(nrf51::Interrupt::TIMER0);
             p.NVIC.enable(microbit::Interrupt::GPIOTE);
             nrf51::NVIC::unpend(microbit::Interrupt::GPIOTE);
-            /*
             p.NVIC.enable(nrf51::Interrupt::RADIO);
             nrf51::NVIC::unpend(nrf51::Interrupt::RADIO);
-            */
         }
     }
     loop {}
 }
 
-// interrupt!(RADIO, radio_event);
+interrupt!(RADIO, radio_event);
 interrupt!(TIMER0, timer0_event);
 interrupt!(RTC0, rtc0_event);
 interrupt!(GPIOTE, gpiote_event);
@@ -221,41 +167,41 @@ fn rtc0_event() {
                 s.tick = counter + 1;
                 s.state = match s.state {
                     0 => {
-                        d.display(MID_DOT);
+                        d.display(images::MID_DOT);
                         1
                     }
                     1 => {
-                        d.display(LITTLE_HEART);
+                        d.display(images::LITTLE_HEART);
                         2
                     }
                     2 => {
-                        d.display(HEART);
+                        d.display(images::HEART);
                         3
                     }
                     3 => {
-                        d.display(LITTLE_HEART);
+                        d.display(images::LITTLE_HEART);
                         4
                     }
                     4 => {
-                        d.display(MID_DOT);
+                        d.display(images::MID_DOT);
                         5
                     }
                     5 => {
-                        d.display(CLEAR);
+                        d.display(images::CLEAR);
                         0
                     }
                     100 => {
-                        d.display(HAPPY);
+                        d.display(images::HAPPY);
                         s.tick = counter + 10;
                         0
                     }
                     101 => {
-                        d.display(SAD);
+                        d.display(images::SAD);
                         s.tick = counter + 10;
                         0
                     }
                     102 => {
-                        d.display(GHOST);
+                        d.display(images::GHOST);
                         s.tick = counter + 10;
                         0
                     }
@@ -267,18 +213,27 @@ fn rtc0_event() {
         }
     });
 }
-/*
+
 fn radio_event() {
     cortex_m::interrupt::free(|cs| {
-
+        if let (Some(t), Some(r)) = (
+            TX.borrow(cs).borrow_mut().deref_mut(),
+            RDIO.borrow(cs).borrow_mut().deref_mut())
+        {
+            let mut packet = [0; radio::MAX_PACKET_SIZE];
+            r.receive(&mut packet);
+            writeln!(t, "Radio {0:02x}", packet[0]);
+            // r.start_receive();
+        }
     });
 }
-*/
+
 fn timer0_event() {
     cortex_m::interrupt::free(|cs| {
         if let (Some(t), Some(d)) = (
             TIMER.borrow(cs).borrow_mut().deref_mut(),
-            DISPLAY.borrow(cs).borrow_mut().deref_mut()) {
+            DISPLAY.borrow(cs).borrow_mut().deref_mut())
+        {
             t.events_compare[0].reset();
             t.cc[0].write(|w| unsafe { w.bits(2000) });
             t.tasks_start.write(|w| unsafe { w.bits(1) });
