@@ -8,6 +8,7 @@ use nrf51::radio::state::STATER;
 
 pub const BASE_ADDRESS: u32 = 0x75626974;
 pub const DEFAULT_GROUP: u8 = 0;
+pub const DEFAULT_CHANNEL: u8 = 7;
 pub const MAX_PACKAGE_SIZE: usize = 32;
 // pub const HEADER_SIZE: usize = 4;
 // pub const MAXIMUM_RX_BUFFERS: usize = 4;
@@ -58,7 +59,7 @@ impl Radio {
             // Configure base address
             radio.base0.write(|w| w.bits(BASE_ADDRESS));
             radio.prefix0.write(|w| w.ap0().bits(DEFAULT_GROUP));
-            radio.frequency.write(|w| w.frequency().bits(7u8));
+            radio.frequency.write(|w| w.frequency().bits(DEFAULT_CHANNEL));
 
             radio.datawhiteiv.write(|w|
                 w.datawhiteiv().bits(WHITENING_IV));
