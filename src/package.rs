@@ -1,3 +1,5 @@
+//! MakeCode package format
+
 use core::convert::From;
 use core::str;
 
@@ -35,7 +37,29 @@ pub struct PackageHeader
     serial_number: i32,
 }
 
+/// # Package Header
+///
+/// The goal is to be able to communicate with software written with MakeCode
+/// or similar.
+///
+/// ```notrust
+/// | 0    | 1 ... 4 | 5 ... 8       | 9 ... 28
+/// ----------------------------------------------
+/// | type | time    | serial number | payload
+/// ```
+/// Package type is either,
+///  * 0, Integer value
+///  * 1, Named integer value
+///  * 2, String
+///  * 3, Buffer
+///  * 4, Double value
+///  * 5, Named double value
+/// 
+/// ## Reference
+///
+/// * <https://github.com/Microsoft/pxt-microbit/blob/master/libs/radio/radio.cpp>
 impl PackageHeader {
+    /// Unpack a PackageHeader from the byte slice
     pub fn unpack(buffer: &[u8]) -> PackageHeader {
         assert!(buffer.len() > 8);
         let package_type = PackageType::from(buffer[0]);
@@ -52,19 +76,22 @@ impl PackageHeader {
         }
     }
 
+    /// Get the package type
     pub fn package_type(&self) -> PackageType {
         self.package_type.clone()
     }
-
+    /// Get the package time
     pub fn time(&self) -> i32 {
         self.time
     }
-
+    /// Get the package serial number
     pub fn serial_number(&self) -> i32 {
         self.serial_number
     }
 }
 
+/// # Package
+/// 
 pub enum Package
 {
     Integer(PackageHeader, i32),
@@ -74,6 +101,7 @@ pub enum Package
 }
 
 impl Package {
+    /// Unpack a Package from the byte slice
     pub fn unpack(buffer: &[u8]) -> Package {
         if buffer.len() < 9 {
             return Package::Unknown;

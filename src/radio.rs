@@ -1,3 +1,5 @@
+//! NRF Radio
+
 use core::sync::atomic::Ordering;
 use core::sync::atomic::compiler_fence;
 
@@ -21,21 +23,11 @@ pub type PackageBuffer = [u8; MAX_PACKAGE_SIZE];
 /// The goal is to be able to communicate with software written with MakeCode
 /// or similar.
 /// 
-/// The package format seems to be the following,
-/// 
-/// ```notrust
-/// Packet Spec:
-/// | 0           | 1 ... 4     | 5 ... 8       | 9 ... 28
-/// ------------------------------------------------------
-/// | packet type | system time | serial number | payload
-/// ```
-/// 
-/// The radio is configured as nrf24 1 mbit....
+/// The radio is configured as Nordic properitary 1 Mbit radio, 16-bit CRC.
 /// 
 /// ## Reference
 /// 
 /// * <https://github.com/lancaster-university/microbit-dal/blob/master/source/drivers/MicroBitRadio.cpp>
-/// * <https://github.com/Microsoft/pxt-microbit/blob/master/libs/radio/radio.cpp>
 pub struct Radio {
     radio: RADIO,
     rx_buf: PackageBuffer,

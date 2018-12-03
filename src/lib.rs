@@ -1,5 +1,6 @@
 //! # The micro:bit
 //! 
+//! Wrappers for BBC micro:bit functionality
 
 #![no_std]
 

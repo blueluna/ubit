@@ -1,4 +1,4 @@
-//! On-board user LEDs
+//! On-board LED matrix
 
 use nrf51_hal::gpio::gpio::PIN;
 use nrf51_hal::gpio::gpio::{
