@@ -1,4 +1,6 @@
 use core::convert::From;
+use core::sync::atomic::Ordering;
+use core::sync::atomic::compiler_fence;
 
 use nrf51::RADIO;
 use nrf51::radio::state::STATER;
@@ -22,7 +24,7 @@ pub enum PacketType {
     Buffer,
     Double,
     DoubleValue,
-    None,
+    Unknown,
 }
 
 impl From<u8> for PacketType {
@@ -34,16 +36,81 @@ impl From<u8> for PacketType {
             3 => PacketType::Buffer,
             4 => PacketType::Double,
             5 => PacketType::DoubleValue,
-            _ => PacketType::None,
+            _ => PacketType::Unknown,
         }
     }
 }
 
-struct PacketHeader
+pub struct PacketHeader
 {
     packet_type: PacketType,
-    time: u32,
-    serial: u32,
+    time: i32,
+    serial_number: i32,
+}
+
+impl PacketHeader {
+    pub fn unpack(buffer: &[u8]) -> PacketHeader {
+        assert!(buffer.len() > 8);
+        let packet_type = PacketType::from(buffer[0]);
+        let mut time = 0i32;
+        let mut serial_number = 0i32;
+        if packet_type != PacketType::Unknown {
+            time = (buffer[1] as i32) << 24 | (buffer[2] as i32) << 16
+                | (buffer[3] as i32) << 8 | (buffer[4] as i32);
+            serial_number = (buffer[5] as i32) << 24 | (buffer[6] as i32) << 16
+                | (buffer[7] as i32) << 8 | (buffer[8] as i32);
+        }
+        PacketHeader {
+            packet_type,
+            time,
+            serial_number,
+        }
+    }
+}
+
+pub enum Packet
+{
+    Integer(PacketHeader, i32),
+    IntegerValue(PacketHeader, i32),
+    Other(PacketHeader),
+    Unknown,
+}
+
+impl Packet {
+    pub fn unpack(buffer: &[u8]) -> Packet {
+        if buffer.len() < 9 {
+            return Packet::Unknown;
+        }
+        let ph = PacketHeader::unpack(&buffer[0..]);
+        match ph.packet_type {
+            PacketType::Integer => {
+                if buffer.len() > 12 {
+                    let value = (buffer[9] as i32) << 24
+                        | (buffer[10] as i32) << 16
+                        | (buffer[11] as i32) << 8
+                        | (buffer[12] as i32);
+                    return Packet::Integer(ph, value);
+                }
+                return Packet::Unknown;
+            }
+            PacketType::IntegerValue => {
+                if buffer.len() > 12 {
+                    let value = (buffer[9] as i32) << 24
+                        | (buffer[10] as i32) << 16
+                        | (buffer[11] as i32) << 8
+                        | (buffer[12] as i32);
+                    return Packet::IntegerValue(ph, value);
+                }
+                return Packet::Unknown;
+            }
+            PacketType::Unknown => {
+                return Packet::Unknown;
+            }
+            _ => {
+                return Packet::Other(ph);
+            }
+        }
+    }
 }
 
 /// # The micro:bit radio
@@ -126,6 +193,7 @@ impl Radio {
 
     pub fn start_receive(&mut self)
     {
+        compiler_fence(Ordering::AcqRel);
         let rx_buf = &mut self.rx_buf as *mut _ as u32;
         self.radio.packetptr.write(|w| unsafe { w.bits(rx_buf) });
         self.radio.rxaddresses.write(|w| w.addr0().enabled());
@@ -135,8 +203,8 @@ impl Radio {
 
     pub fn receive(&mut self, dst: &mut PacketBuffer) -> usize
     {
+        compiler_fence(Ordering::AcqRel);
         self.radio.events_end.reset();
-
         if self.radio.crcstatus.read().crcstatus().is_crcok() {
             let length = self.rx_buf[0];
             if length > 0 {
