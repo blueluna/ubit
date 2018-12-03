@@ -42,8 +42,8 @@ impl PackageHeader {
         let mut time = 0i32;
         let mut serial_number = 0i32;
         if package_type != PackageType::Unknown {
-            time = BigEndian::read_i32(&buffer[1..4]);
-            serial_number = BigEndian::read_i32(&buffer[5..8]);
+            time = BigEndian::read_i32(&buffer[1..5]);
+            serial_number = BigEndian::read_i32(&buffer[5..9]);
         }
         PackageHeader {
             package_type,
@@ -82,14 +82,14 @@ impl Package {
         match ph.package_type {
             PackageType::Integer => {
                 if buffer.len() > 12 {
-                    let value = BigEndian::read_i32(&buffer[9..12]);
+                    let value = BigEndian::read_i32(&buffer[9..13]);
                     return Package::Integer(ph, value);
                 }
                 return Package::Unknown;
             }
             PackageType::IntegerValue => {
                 if buffer.len() > 12 {
-                    let value = BigEndian::read_i32(&buffer[9..12]);
+                    let value = BigEndian::read_i32(&buffer[9..13]);
                     return Package::IntegerValue(ph, value);
                 }
                 return Package::Unknown;

@@ -234,6 +234,7 @@ fn radio_event() {
             STATE.borrow(cs).borrow_mut().deref_mut(),
             RTC.borrow(cs).borrow_mut().deref_mut())
         {
+            write!(tx, "Radio\n\r");
             let mut data = [0; radio::MAX_PACKAGE_SIZE];
             let packet_size = radio.receive(&mut data);
             if packet_size > 9 {
