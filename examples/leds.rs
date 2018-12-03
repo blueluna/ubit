@@ -127,6 +127,7 @@ fn main() -> ! {
             p.TIMER0.tasks_start.write(|w| unsafe { w.bits(1) });
 
             let mut radio = radio::Radio::new(p.RADIO);
+            radio.set_group(1);
             radio.start_receive();
 
             *RDIO.borrow(cs).borrow_mut() = Some(radio);
@@ -205,6 +206,11 @@ fn rtc0_event() {
                         s.tick = counter + 10;
                         0
                     }
+                    200 => {
+                        d.display(images::WAVE);
+                        s.tick = counter + 10;
+                        0
+                    }
                     _ => {
                         0
                     }
@@ -216,14 +222,20 @@ fn rtc0_event() {
 
 fn radio_event() {
     cortex_m::interrupt::free(|cs| {
-        if let (Some(t), Some(r)) = (
-            TX.borrow(cs).borrow_mut().deref_mut(),
-            RDIO.borrow(cs).borrow_mut().deref_mut())
+        if let (Some(s), Some(r), Some(rtc)) = (
+            STATE.borrow(cs).borrow_mut().deref_mut(),
+            RDIO.borrow(cs).borrow_mut().deref_mut(),
+            RTC.borrow(cs).borrow_mut().deref_mut())
         {
+            let counter = rtc.counter.read().bits();
             let mut packet = [0; radio::MAX_PACKET_SIZE];
-            r.receive(&mut packet);
-            writeln!(t, "Radio {0:02x}", packet[0]);
-            // r.start_receive();
+            if r.receive(&mut packet) > 0 {
+                let rt = radio::PacketType::from(packet[1]);
+                if rt != radio::PacketType::None {
+                    s.state = 200; s.tick = counter;
+                }
+            }
+            r.start_receive();
         }
     });
 }

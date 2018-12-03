@@ -14,7 +14,8 @@ pub const WHITENING_IV: u8 = 0x18;
 
 pub type PacketBuffer = [u8; MAX_PACKET_SIZE];
 
-enum PacketType {
+#[derive(PartialEq)]
+pub enum PacketType {
     Integer,
     IntegerValue,
     String,
@@ -93,8 +94,9 @@ impl Radio {
             radio.crcinit.write(|w| w.bits(CRC_PRESET));
             radio.crcpoly.write(|w| w.crcpoly().bits(CRC_POLY & 0x0000ffff));
             // Configure base address
-            radio.base0.write(|w| w.bits(BASE_ADDRESS << 8));
+            radio.base0.write(|w| w.bits(BASE_ADDRESS));
             radio.prefix0.write(|w| w.ap0().bits(DEFAULT_GROUP));
+            radio.frequency.write(|w| w.frequency().bits(7u8));
 
             radio.datawhiteiv.write(|w|
                 w.datawhiteiv().bits(WHITENING_IV));
@@ -116,18 +118,32 @@ impl Radio {
         self.radio.state.read().state()
     }
 
+    /// Change the group
+    pub fn set_group(&mut self, group: u8)
+    {
+        self.radio.prefix0.write(|w| unsafe { w.ap0().bits(group) });
+    }
+
     pub fn start_receive(&mut self)
     {
         let rx_buf = &mut self.rx_buf as *mut _ as u32;
         self.radio.packetptr.write(|w| unsafe { w.bits(rx_buf) });
-        self.radio.rxaddresses.write(|w| w.addr1().enabled());
+        self.radio.rxaddresses.write(|w| w.addr0().enabled());
         self.radio.intenset.write(|w| w.end().set());
         self.radio.tasks_rxen.write(|w| unsafe { w.bits(1) });
     }
 
-    pub fn receive(&mut self, dst: &mut PacketBuffer)
+    pub fn receive(&mut self, dst: &mut PacketBuffer) -> usize
     {
         self.radio.events_end.reset();
-        dst.copy_from_slice(&self.rx_buf[..MAX_PACKET_SIZE]);
+
+        if self.radio.crcstatus.read().crcstatus().is_crcok() {
+            let length = self.rx_buf[0];
+            if length > 0 {
+                dst.copy_from_slice(&self.rx_buf[..MAX_PACKET_SIZE]);
+                return length as usize
+            }
+        }
+        0
     }
 }
