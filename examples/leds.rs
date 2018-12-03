@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-extern crate panic_halt;
+extern crate panic_semihosting;
 extern crate cortex_m;
 extern crate cortex_m_rt;
 #[macro_use]
@@ -23,6 +23,7 @@ use ubit::leds::images;
 
 use ubit::radio;
 use ubit::leds;
+use ubit::package;
 
 struct ProgramState {
     state: u32,
@@ -233,15 +234,15 @@ fn radio_event() {
             STATE.borrow(cs).borrow_mut().deref_mut(),
             RTC.borrow(cs).borrow_mut().deref_mut())
         {
-            let mut packet = [0; radio::MAX_PACKET_SIZE];
-            let packet_size = radio.receive(&mut packet);
+            let mut data = [0; radio::MAX_PACKAGE_SIZE];
+            let packet_size = radio.receive(&mut data);
             if packet_size > 9 {
-                let p = radio::Packet::unpack(&packet[1..]);
+                let p = package::Package::unpack(&data[1..]);
                 match p {
-                    radio::Packet::Integer(_ph, value) => {
+                    package::Package::Integer(_ph, value) => {
                         write!(tx, "Integer Package {}\n\r", value);
                     }
-                    radio::Packet::IntegerValue(_ph, value) => {
+                    package::Package::IntegerValue(_ph, value) => {
                         let counter = rtc.counter.read().bits();
                         if value == 0 {
                             state.state = 200;
@@ -252,10 +253,10 @@ fn radio_event() {
                             state.tick = counter;
                         }
                     }
-                    radio::Packet::Other(_ph) => {
+                    package::Package::Other(_ph) => {
                         write!(tx, "Other Package {}\n\r", packet_size);
                     }
-                    radio::Packet::Unknown => {
+                    package::Package::Unknown => {
                         write!(tx, "Unknown Package\n\r");
                     }
                 }

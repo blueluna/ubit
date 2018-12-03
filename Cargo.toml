@@ -8,14 +8,16 @@ keywords = [ "arm", "cortex-m", "nrf51", ]
 license = "MIT"
 readme = "README.md"
 repository = "https://bitbucket.org/blueluna/ubit"
-# edition = "2018"
+edition = "2018"
 
 [dependencies]
 nrf51 = "0.5"
 nrf51-hal = "0.5"
+byteorder = { version = "1", default-features = false }
 
 [dev-dependencies]
 cortex-m = "0.5"
 cortex-m-rt = "0.6"
 microbit = "0.6"
-panic-halt = "0.2"
+panic-semihosting = "0.5"
+cortex-m-rtfm = "0.4.0-beta.3"
