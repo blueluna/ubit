@@ -274,9 +274,12 @@ fn timer0_event() {
             DISPLAY.borrow(cs).borrow_mut().deref_mut())
         {
             timer.events_compare[0].reset();
-            timer.cc[0].write(|w| unsafe { w.bits(2000) });
+            let mut delay = 0;
+            while delay == 0 {
+                delay = display.update_col();
+            }
+            timer.cc[0].write(|w| unsafe { w.bits(delay) });
             timer.tasks_start.write(|w| unsafe { w.bits(1) });
-            display.update_row();
         }
     });
 }

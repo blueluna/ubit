@@ -20,6 +20,7 @@ use ubit::hal::serial;
 use ubit::hal::serial::BAUD115200;
 
 use ubit::leds;
+use ubit::leds::images;
 
 static TIMER: Mutex<RefCell<Option<microbit::TIMER0>>> = Mutex::new(RefCell::new(None));
 static RTC: Mutex<RefCell<Option<microbit::RTC0>>> = Mutex::new(RefCell::new(None));
@@ -105,34 +106,39 @@ interrupt!(RTC0, rtc0_event);
 
 fn rtc0_event() {
     cortex_m::interrupt::free(|cs| {
-        if let (Some(display), Some(rtc)) = (
+        if let (Some(display), Some(rtc), Some(tx)) = (
             DISPLAY.borrow(cs).borrow_mut().deref_mut(),
-            RTC.borrow(cs).borrow_mut().deref_mut()) {
+            RTC.borrow(cs).borrow_mut().deref_mut(),
+            TX.borrow(cs).borrow_mut().deref_mut()) {
             rtc.events_tick.reset();
             let counter = rtc.counter.read().bits();
-            let intensity = (counter & 0xff) as u8;
+            // let intensity = (counter >> 2 & 0xff) as u8;
             let image = [
-                [intensity, intensity, intensity, intensity, intensity],
-                [intensity, intensity, intensity, intensity, intensity],
-                [intensity, intensity, intensity, intensity, intensity],
-                [intensity, intensity, intensity, intensity, intensity],
-                [intensity, intensity, intensity, intensity, intensity],
+                [242, 232, 231, 221, 210],
+                [200, 189, 179, 168, 158],
+                [147, 137, 126, 116, 105],
+                [95, 84, 74, 63, 53],
+                [42, 32, 21, 11, 1],
             ];
-            display.display(image);
+            // display.display(images::GHOST);
         }
     });
 }
 
 fn timer0_event() {
     cortex_m::interrupt::free(|cs| {
-        if let (Some(timer), Some(display)) = (
+        if let (Some(timer), Some(display), Some(tx)) = (
             TIMER.borrow(cs).borrow_mut().deref_mut(),
-            DISPLAY.borrow(cs).borrow_mut().deref_mut())
+            DISPLAY.borrow(cs).borrow_mut().deref_mut(),
+            TX.borrow(cs).borrow_mut().deref_mut())
         {
             timer.events_compare[0].reset();
-            timer.cc[0].write(|w| unsafe { w.bits(2000) });
+            let mut delay = 0;
+            while delay == 0 {
+                delay = display.update_col();
+            }
+            timer.cc[0].write(|w| unsafe { w.bits(delay) });
             timer.tasks_start.write(|w| unsafe { w.bits(1) });
-            display.update_row();
         }
     });
 }

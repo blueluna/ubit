@@ -26,6 +26,7 @@ pub struct Display {
     rows: [LED; 3],
     cols: [LED; 9],
     row: usize,
+    intensity: u8,
     buffer: DisplayBuffer,
     next_buffer: DisplayBuffer,
     next_updated: bool,
@@ -64,6 +65,7 @@ impl Display {
             next_buffer: [[0; 9]; 3],
             next_updated: false,
             row: 0,
+            intensity: 0x01,
         };
         // This is needed to reduce flickering on reset
         retval.clear();
@@ -95,11 +97,55 @@ impl Display {
         self.update_next(image);
     }
 
-    pub fn update_row(&mut self) {
+    pub fn update_col(&mut self) -> u32 {
+        self.intensity = self.intensity.rotate_left(1);
+        if self.intensity == 0x01 {
+            self.update_row();
+        }
+        let row_vals = self.buffer[self.row];
+        for (col_sig, col_val) in self.cols.iter_mut().zip(row_vals.iter()) {
+            if col_val & self.intensity == self.intensity {
+                col_sig.set_low();
+            }
+            else {
+                col_sig.set_high();
+            }
+        }
+        if self.intensity == 0x01 {
+            0
+        }
+        else if self.intensity == 0x02 {
+            0
+        }
+        else if self.intensity == 0x04 {
+            0
+        }
+        else if self.intensity == 0x08 {
+            163
+        }
+        else if self.intensity == 0x10 {
+            351
+        }
+        else if self.intensity == 0x20 {
+            726
+        }
+        else if self.intensity == 0x40 {
+            1476
+        }
+        else if self.intensity == 0x80 {
+            2976
+        }
+        else {
+            40000
+        }
+    }
+
+    fn update_row(&mut self) {
+        // clear last column
         for col_sig in self.cols.iter_mut() {
             col_sig.set_high();
         }
-        // last row
+        // disable last row
         {
             let row_sig = self.rows.get_mut(self.row).unwrap();
             row_sig.set_low();
@@ -118,14 +164,5 @@ impl Display {
         // new row
         let row_sig = self.rows.get_mut(self.row).unwrap();
         row_sig.set_high();
-        let row_vals = self.buffer[self.row];
-        for (col_sig, col_val) in self.cols.iter_mut().zip(row_vals.iter()) {
-            if *col_val > 0 {
-                col_sig.set_low();
-            }
-            else {
-                col_sig.set_high();
-            }
-        }
     }
 }
