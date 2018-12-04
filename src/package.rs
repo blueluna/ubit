@@ -1,9 +1,10 @@
 //! MakeCode package format
 
 use core::convert::From;
-use core::str;
 
-use byteorder::{ByteOrder, BigEndian};
+use byteorder::{ByteOrder, LittleEndian};
+
+use crate::datagram::{DatagramHeader, DatagramProtocol};
 
 #[derive(Clone, PartialEq)]
 pub enum PackageType {
@@ -30,11 +31,18 @@ impl From<u8> for PackageType {
     }
 }
 
-pub struct PackageHeader
-{
-    package_type: PackageType,
-    time: i32,
-    serial_number: i32,
+impl From<PackageType> for u8 {
+    fn from(value: PackageType) -> u8 {
+        match value {
+            PackageType::Integer => 0,
+            PackageType::IntegerValue => 1,
+            PackageType::String => 2,
+            PackageType::Buffer => 3,
+            PackageType::Double => 4,
+            PackageType::DoubleValue => 5,
+            PackageType::Unknown => 0xff,
+        }
+    }
 }
 
 /// # Package Header
@@ -58,21 +66,43 @@ pub struct PackageHeader
 /// ## Reference
 ///
 /// * <https://github.com/Microsoft/pxt-microbit/blob/master/libs/radio/radio.cpp>
+pub struct PackageHeader
+{
+    pub datagram_header: DatagramHeader,
+    package_type: PackageType,
+    time: u32,
+    serial_number: u32,
+}
+
 impl PackageHeader {
     /// Unpack a PackageHeader from the byte slice
     pub fn unpack(buffer: &[u8]) -> PackageHeader {
-        assert!(buffer.len() > 8);
-        let package_type = PackageType::from(buffer[0]);
-        let mut time = 0i32;
-        let mut serial_number = 0i32;
-        if package_type != PackageType::Unknown {
-            time = BigEndian::read_i32(&buffer[1..5]);
-            serial_number = BigEndian::read_i32(&buffer[5..9]);
+        let datagram_header = DatagramHeader::unpack(&buffer[..]);
+        let slice = &buffer[4..];
+        let package_type =
+            if datagram_header.protocol() != DatagramProtocol::Datagram
+                || datagram_header.payload_length() <= 8
+        {
+            PackageType::Unknown
         }
-        PackageHeader {
-            package_type,
-            time,
-            serial_number,
+        else {
+            PackageType::from(slice[0])
+        };
+        if package_type != PackageType::Unknown {
+            PackageHeader {
+                datagram_header,
+                package_type,
+                time: LittleEndian::read_u32(&slice[1..=4]),
+                serial_number: LittleEndian::read_u32(&slice[5..=8]),
+            }
+        }
+        else {
+            PackageHeader {
+                datagram_header,
+                package_type: PackageType::Unknown,
+                time: 0,
+                serial_number: 0,
+            }
         }
     }
 
@@ -81,53 +111,69 @@ impl PackageHeader {
         self.package_type.clone()
     }
     /// Get the package time
-    pub fn time(&self) -> i32 {
+    pub fn time(&self) -> u32 {
         self.time
     }
     /// Get the package serial number
-    pub fn serial_number(&self) -> i32 {
+    pub fn serial_number(&self) -> u32 {
         self.serial_number
+    }
+    /// Get the package payload length
+    pub fn payload_length(&self) -> usize {
+        let length = self.datagram_header.payload_length();
+        if length > 9 { length - 9 } else { 0 }
     }
 }
 
-/// # Package
+/// # PackageData
 /// 
-pub enum Package
+pub enum PackageData
 {
-    Integer(PackageHeader, i32),
-    IntegerValue(PackageHeader, i32),
-    Other(PackageHeader),
+    Integer(i32),
+    IntegerValue(i32),
+    Other,
     Unknown,
+}
+
+pub struct Package {
+    pub header: PackageHeader,
+    pub data: PackageData,
 }
 
 impl Package {
     /// Unpack a Package from the byte slice
     pub fn unpack(buffer: &[u8]) -> Package {
-        if buffer.len() < 9 {
-            return Package::Unknown;
-        }
-        let ph = PackageHeader::unpack(&buffer[0..]);
-        match ph.package_type {
+        let header = PackageHeader::unpack(&buffer[..]);
+        match header.package_type {
             PackageType::Integer => {
-                if buffer.len() > 12 {
-                    let value = BigEndian::read_i32(&buffer[9..13]);
-                    return Package::Integer(ph, value);
+                if header.payload_length() >= 4 {
+                    let value = LittleEndian::read_i32(&buffer[13..=16]);
+                    return Package {
+                        header,
+                        data: PackageData::Integer(value),
+                    };
                 }
-                return Package::Unknown;
             }
             PackageType::IntegerValue => {
-                if buffer.len() > 12 {
-                    let value = BigEndian::read_i32(&buffer[9..13]);
-                    return Package::IntegerValue(ph, value);
+                if header.payload_length() >= 5 {
+                    let value = LittleEndian::read_i32(&buffer[13..=16]);
+                    return Package {
+                        header,
+                        data: PackageData::IntegerValue(value),
+                    };
                 }
-                return Package::Unknown;
             }
-            PackageType::Unknown => {
-                return Package::Unknown;
-            }
+            PackageType::Unknown => (),
             _ => {
-                return Package::Other(ph);
+                return Package {
+                    header,
+                    data: PackageData::Other,
+                };
             }
+        }
+        Package {
+            header,
+            data: PackageData::Unknown,
         }
     }
 }

@@ -2,11 +2,12 @@
 #![no_main]
 
 extern crate panic_semihosting;
-extern crate cortex_m;
 extern crate cortex_m_rt;
 #[macro_use]
 extern crate microbit;
-extern crate ubit;
+
+use core::sync::atomic::Ordering;
+use core::sync::atomic::compiler_fence;
 
 use core::cell::RefCell;
 use core::fmt::Write;
@@ -20,14 +21,51 @@ use ubit::hal::serial;
 use ubit::hal::gpio::{Floating, Input};
 use ubit::hal::serial::BAUD115200;
 use ubit::leds::images;
-
 use ubit::radio;
 use ubit::leds;
 use ubit::package;
 
 struct ProgramState {
-    state: u32,
-    tick: u32
+    current_state: u32,
+    next_state: u32,
+    change_at: u32,
+    rtc: microbit::RTC0,
+}
+
+impl ProgramState {
+    pub fn new(rtc: microbit::RTC0) -> Self {
+        // Configure RTC with 125 ms resolution 
+        rtc.prescaler.write(|w| unsafe { w.bits(4095) });
+        // Enable interrupt for tick
+        rtc.intenset.write(|w| w.tick().set_bit());
+        // Start counter
+        rtc.tasks_start.write(|w| unsafe { w.bits(1) });
+        ProgramState { current_state: 0, next_state: u32::max_value(), change_at: 10, rtc }
+    }
+
+    pub fn ticks(&self) -> u32 {
+        self.rtc.counter.read().bits()
+    }
+
+    pub fn change_state(&mut self, state: u32, delay: Option<u32>)
+    {
+        self.next_state = state;
+        self.change_at = self.ticks() + delay.unwrap_or(1);
+    }
+
+    pub fn rtc_interrupt(&mut self) -> Option<u32>
+    {
+        self.rtc.events_tick.reset();
+        let now = self.ticks();
+        if self.change_at > 0 && self.change_at <= now {
+            self.current_state = self.next_state;
+            self.change_at = 0;
+            Some(self.current_state)
+        }
+        else {
+            None
+        }
+    }
 }
 
 struct ButtonState {
@@ -38,7 +76,6 @@ struct ButtonState {
 
 static RDIO: Mutex<RefCell<Option<radio::Radio>>> = Mutex::new(RefCell::new(None));
 static TIMER: Mutex<RefCell<Option<microbit::TIMER0>>> = Mutex::new(RefCell::new(None));
-static RTC: Mutex<RefCell<Option<microbit::RTC0>>> = Mutex::new(RefCell::new(None));
 static DISPLAY: Mutex<RefCell<Option<leds::Display>>> = Mutex::new(RefCell::new(None));
 static STATE: Mutex<RefCell<Option<ProgramState>>> = Mutex::new(RefCell::new(None));
 static TX: Mutex<RefCell<Option<serial::Tx<microbit::UART0>>>> = Mutex::new(RefCell::new(None));
@@ -96,12 +133,10 @@ fn main() -> ! {
 
             *DISPLAY.borrow(cs).borrow_mut() = Some(display);
 
-            // Configure RX and TX pins accordingly
+            // Configure RX and TX pins
             let tx = gpio.pin24.into_push_pull_output().downgrade();
             let rx = gpio.pin25.into_floating_input().downgrade();
-            let (mut serial_tx, _) = serial::Serial::uart0(p.UART0, tx, rx, BAUD115200).split();
-
-            let _ = write!(serial_tx, "\n\rStarting!\n\r");
+            let (serial_tx, _) = serial::Serial::uart0(p.UART0, tx, rx, BAUD115200).split();
 
             *BTN.borrow(cs).borrow_mut() = Some(ButtonState {
                 gpio_task_event: p.GPIOTE,
@@ -110,14 +145,7 @@ fn main() -> ! {
                 });
 
             *TX.borrow(cs).borrow_mut() = Some(serial_tx);
-            // Configure RTC with 125 ms resolution 
-            p.RTC0.prescaler.write(|w| unsafe { w.bits(4095) });
-            // Enable interrupt for tick
-            p.RTC0.intenset.write(|w| w.tick().set_bit());
-            // Start counter
-            p.RTC0.tasks_start.write(|w| unsafe { w.bits(1) });
-            *RTC.borrow(cs).borrow_mut() = Some(p.RTC0);
-
+            
             // Configure a timer with 1us resolution
             p.TIMER0.bitmode.write(|w| w.bitmode()._32bit());
             p.TIMER0.prescaler.write(|w| unsafe { w.prescaler().bits(4) });
@@ -133,7 +161,7 @@ fn main() -> ! {
 
             *RDIO.borrow(cs).borrow_mut() = Some(radio);
             *TIMER.borrow(cs).borrow_mut() = Some(p.TIMER0);
-            *STATE.borrow(cs).borrow_mut() = Some(ProgramState { state: 0, tick: 0 });
+            *STATE.borrow(cs).borrow_mut() = Some(ProgramState::new(p.RTC0));
         });
 
         if let Some(mut p) = cortex_m::Peripherals::take() {
@@ -158,106 +186,99 @@ interrupt!(RTC0, rtc0_event);
 interrupt!(GPIOTE, gpiote_event);
 
 fn rtc0_event() {
+    compiler_fence(Ordering::AcqRel);
     cortex_m::interrupt::free(|cs| {
-        if let (Some(s), Some(d), Some(r)) = (
+        if let (Some(state), Some(display)) = (
             STATE.borrow(cs).borrow_mut().deref_mut(),
-            DISPLAY.borrow(cs).borrow_mut().deref_mut(),
-            RTC.borrow(cs).borrow_mut().deref_mut()) {
-            r.events_tick.reset();
-            let counter = r.counter.read().bits();
-            if counter >= s.tick {
-                s.tick = counter + 1;
-                s.state = match s.state {
-                    0 => {
-                        d.display(images::MID_DOT);
-                        1
-                    }
-                    1 => {
-                        d.display(images::LITTLE_HEART);
-                        2
-                    }
-                    2 => {
-                        d.display(images::HEART);
-                        3
-                    }
-                    3 => {
-                        d.display(images::LITTLE_HEART);
-                        4
-                    }
-                    4 => {
-                        d.display(images::MID_DOT);
-                        5
-                    }
-                    5 => {
-                        d.display(images::CLEAR);
-                        0
-                    }
-                    100 => {
-                        d.display(images::HAPPY);
-                        s.tick = counter + 10;
-                        0
-                    }
-                    101 => {
-                        d.display(images::SAD);
-                        s.tick = counter + 10;
-                        0
-                    }
-                    102 => {
-                        d.display(images::GHOST);
-                        s.tick = counter + 10;
-                        0
-                    }
-                    200 => {
-                        d.display(images::HAPPY);
-                        s.tick = counter + 10;
-                        0
-                    }
-                    201 => {
-                        d.display(images::SAD);
-                        s.tick = counter + 10;
-                        0
-                    }
-                    _ => {
-                        0
-                    }
+            DISPLAY.borrow(cs).borrow_mut().deref_mut())
+        {
+            let current_state = state.rtc_interrupt();
+            if current_state.is_none() { return; }
+            let (next_state, next_delay) = match current_state.unwrap() {
+                0 => {
+                    display.display(images::MID_DOT);
+                    (1, 1)
                 }
-            }
+                1 => {
+                    display.display(images::LITTLE_HEART);
+                    (2, 1)
+                }
+                2 => {
+                    display.display(images::HEART);
+                    (3, 1)
+                }
+                3 => {
+                    display.display(images::LITTLE_HEART);
+                    (4, 1)
+                }
+                4 => {
+                    display.display(images::MID_DOT);
+                    (5, 1)
+                }
+                5 => {
+                    display.display(images::CLEAR);
+                    (0, 1)
+                }
+                100 => {
+                    display.display(images::HAPPY);
+                    (0, 10)
+                }
+                101 => {
+                    display.display(images::SAD);
+                    (0, 10)
+                }
+                102 => {
+                    display.display(images::GHOST);
+                    (0, 10)
+                }
+                200 => {
+                    display.display(images::HAPPY);
+                    (0, 10)
+                }
+                201 => {
+                    display.display(images::SAD);
+                    (0, 10)
+                }
+                202 => {
+                    display.display(images::GHOST);
+                    (0, 10)
+                }
+                _ => {
+                    (0, 1)
+                }
+            };
+            state.change_state(next_state, Some(next_delay));
         }
     });
 }
 
 fn radio_event() {
+    compiler_fence(Ordering::AcqRel);
     cortex_m::interrupt::free(|cs| {
-        if let (Some(radio), Some(tx), Some(state), Some(rtc)) = (
+        if let (Some(radio), Some(tx), Some(state)) = (
             RDIO.borrow(cs).borrow_mut().deref_mut(),
             TX.borrow(cs).borrow_mut().deref_mut(),
-            STATE.borrow(cs).borrow_mut().deref_mut(),
-            RTC.borrow(cs).borrow_mut().deref_mut())
+            STATE.borrow(cs).borrow_mut().deref_mut())
         {
-            write!(tx, "Radio\n\r");
             let mut data = [0; radio::MAX_PACKAGE_SIZE];
-            let packet_size = radio.receive(&mut data);
-            if packet_size > 9 {
-                let p = package::Package::unpack(&data[1..]);
-                match p {
-                    package::Package::Integer(_ph, value) => {
-                        write!(tx, "Integer Package {}\n\r", value);
-                    }
-                    package::Package::IntegerValue(_ph, value) => {
-                        let counter = rtc.counter.read().bits();
-                        if value == 0 {
-                            state.state = 200;
-                            state.tick = counter;
-                        }
-                        else if value == 1 {
-                            state.state = 201;
-                            state.tick = counter;
+            let _ = radio.receive(&mut data);
+            let p = package::Package::unpack(&data[..]);
+            if p.header.datagram_header.length() >= 16 {
+                match p.data {
+                    package::PackageData::Integer(value) => {
+                        if value >= 0 && value < 3 {
+                            state.change_state(200 + (value as u32), None);
                         }
                     }
-                    package::Package::Other(_ph) => {
-                        write!(tx, "Other Package {}\n\r", packet_size);
+                    package::PackageData::IntegerValue(value) => {
+                        if value >= 0 && value < 3 {
+                            state.change_state(200 + (value as u32), None);
+                        }
                     }
-                    package::Package::Unknown => {
+                    package::PackageData::Other => {
+                        write!(tx, "Other Package\n\r");
+                    }
+                    package::PackageData::Unknown => {
                         write!(tx, "Unknown Package\n\r");
                     }
                 }
@@ -268,6 +289,7 @@ fn radio_event() {
 }
 
 fn timer0_event() {
+    compiler_fence(Ordering::AcqRel);
     cortex_m::interrupt::free(|cs| {
         if let (Some(timer), Some(display)) = (
             TIMER.borrow(cs).borrow_mut().deref_mut(),
@@ -285,17 +307,17 @@ fn timer0_event() {
 }
 
 fn gpiote_event() {
+    compiler_fence(Ordering::AcqRel);
     cortex_m::interrupt::free(|cs| {
-        if let (Some(btn), Some(state), Some(rtc)) = (
+        if let (Some(btn), Some(state)) = (
             BTN.borrow(cs).borrow_mut().deref_mut(),
-            STATE.borrow(cs).borrow_mut().deref_mut(),
-            RTC.borrow(cs).borrow_mut().deref_mut()) {
-            let counter = rtc.counter.read().bits();
+            STATE.borrow(cs).borrow_mut().deref_mut())
+        {
             match (btn.button_a.is_low(), btn.button_b.is_low()) {
                 (false, false) => (),
-                (true, false) => { state.state = 100; state.tick = counter; }
-                (false, true) => { state.state = 101; state.tick = counter; }
-                (true, true) => { state.state = 102; state.tick = counter; }
+                (true, false) => { state.change_state(100, None); }
+                (false, true) => { state.change_state(101, None); }
+                (true, true) => { state.change_state(102, None); }
             }
             /* Clear events */
             btn.gpio_task_event.events_in[0].write(|w| unsafe { w.bits(0) });

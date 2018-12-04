@@ -10,4 +10,5 @@ pub extern crate byteorder;
 
 pub mod radio;
 pub mod leds;
+pub mod datagram;
 pub mod package;
