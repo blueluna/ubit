@@ -18,5 +18,4 @@ byteorder = { version = "1", default-features = false }
 [dev-dependencies]
 cortex-m = "0.5"
 cortex-m-rt = "0.6"
-microbit = "0.6"
 panic-semihosting = "0.5"

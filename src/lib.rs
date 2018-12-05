@@ -6,7 +6,9 @@
 
 extern crate nrf51;
 pub extern crate nrf51_hal as hal;
-pub extern crate byteorder;
+extern crate byteorder;
+
+pub use nrf51::*;
 
 pub mod radio;
 pub mod leds;

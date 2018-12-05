@@ -3,8 +3,6 @@
 
 extern crate panic_semihosting;
 extern crate cortex_m_rt;
-#[macro_use]
-extern crate microbit;
 
 use core::sync::atomic::Ordering;
 use core::sync::atomic::compiler_fence;
@@ -15,6 +13,8 @@ use core::ops::DerefMut;
 
 use cortex_m::interrupt::Mutex;
 use cortex_m_rt::entry;
+
+use nrf51::interrupt;
 
 use ubit::hal::prelude::*;
 use ubit::hal::serial;
@@ -29,11 +29,11 @@ struct ProgramState {
     current_state: u32,
     next_state: u32,
     change_at: u32,
-    rtc: microbit::RTC0,
+    rtc: ubit::RTC0,
 }
 
 impl ProgramState {
-    pub fn new(rtc: microbit::RTC0) -> Self {
+    pub fn new(rtc: ubit::RTC0) -> Self {
         // Configure RTC with 125 ms resolution 
         rtc.prescaler.write(|w| unsafe { w.bits(4095) });
         // Enable interrupt for tick
@@ -69,21 +69,21 @@ impl ProgramState {
 }
 
 struct ButtonState {
-    gpio_task_event: microbit::GPIOTE,
-    button_a: microbit::hal::gpio::gpio::PIN17<Input<Floating>>,
-    button_b: microbit::hal::gpio::gpio::PIN26<Input<Floating>>,
+    gpio_task_event: ubit::GPIOTE,
+    button_a: ubit::hal::gpio::gpio::PIN17<Input<Floating>>,
+    button_b: ubit::hal::gpio::gpio::PIN26<Input<Floating>>,
 }
 
 static RDIO: Mutex<RefCell<Option<radio::Radio>>> = Mutex::new(RefCell::new(None));
-static TIMER: Mutex<RefCell<Option<microbit::TIMER0>>> = Mutex::new(RefCell::new(None));
+static TIMER: Mutex<RefCell<Option<ubit::TIMER0>>> = Mutex::new(RefCell::new(None));
 static DISPLAY: Mutex<RefCell<Option<leds::Display>>> = Mutex::new(RefCell::new(None));
 static STATE: Mutex<RefCell<Option<ProgramState>>> = Mutex::new(RefCell::new(None));
-static TX: Mutex<RefCell<Option<serial::Tx<microbit::UART0>>>> = Mutex::new(RefCell::new(None));
+static TX: Mutex<RefCell<Option<serial::Tx<ubit::UART0>>>> = Mutex::new(RefCell::new(None));
 static BTN: Mutex<RefCell<Option<ButtonState>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
 fn main() -> ! {
-    if let Some(p) = microbit::Peripherals::take() {
+    if let Some(p) = ubit::Peripherals::take() {
         // Configure high frequency clock to 16MHz
         p.CLOCK.xtalfreq.write(|w| w.xtalfreq()._16mhz());
         p.CLOCK.tasks_hfclkstart.write(|w| unsafe { w.bits(1) });
@@ -165,16 +165,16 @@ fn main() -> ! {
         });
 
         if let Some(mut p) = cortex_m::Peripherals::take() {
-            p.NVIC.enable(nrf51::Interrupt::RTC0);
-            nrf51::NVIC::unpend(nrf51::Interrupt::RTC0);
-            p.NVIC.enable(nrf51::Interrupt::TIMER0);
-            nrf51::NVIC::unpend(nrf51::Interrupt::TIMER0);
-            p.NVIC.enable(nrf51::Interrupt::TIMER0);
-            nrf51::NVIC::unpend(nrf51::Interrupt::TIMER0);
-            p.NVIC.enable(microbit::Interrupt::GPIOTE);
-            nrf51::NVIC::unpend(microbit::Interrupt::GPIOTE);
-            p.NVIC.enable(nrf51::Interrupt::RADIO);
-            nrf51::NVIC::unpend(nrf51::Interrupt::RADIO);
+            p.NVIC.enable(ubit::Interrupt::RTC0);
+            ubit::NVIC::unpend(ubit::Interrupt::RTC0);
+            p.NVIC.enable(ubit::Interrupt::TIMER0);
+            ubit::NVIC::unpend(ubit::Interrupt::TIMER0);
+            p.NVIC.enable(ubit::Interrupt::TIMER0);
+            ubit::NVIC::unpend(ubit::Interrupt::TIMER0);
+            p.NVIC.enable(ubit::Interrupt::GPIOTE);
+            ubit::NVIC::unpend(ubit::Interrupt::GPIOTE);
+            p.NVIC.enable(ubit::Interrupt::RADIO);
+            ubit::NVIC::unpend(ubit::Interrupt::RADIO);
         }
     }
     loop {}
