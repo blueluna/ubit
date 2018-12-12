@@ -180,12 +180,8 @@ fn main() -> ! {
     loop {}
 }
 
-interrupt!(RADIO, radio_event);
-interrupt!(TIMER0, timer0_event);
-interrupt!(RTC0, rtc0_event);
-interrupt!(GPIOTE, gpiote_event);
-
-fn rtc0_event() {
+#[interrupt]
+fn RTC0() {
     compiler_fence(Ordering::AcqRel);
     cortex_m::interrupt::free(|cs| {
         if let (Some(state), Some(display)) = (
@@ -252,7 +248,8 @@ fn rtc0_event() {
     });
 }
 
-fn radio_event() {
+#[interrupt]
+fn RADIO() {
     compiler_fence(Ordering::AcqRel);
     cortex_m::interrupt::free(|cs| {
         if let (Some(radio), Some(tx), Some(state)) = (
@@ -276,10 +273,10 @@ fn radio_event() {
                         }
                     }
                     package::PackageData::Other => {
-                        write!(tx, "Other Package\n\r");
+                        write!(tx, "Other Package\n\r").unwrap();
                     }
                     package::PackageData::Unknown => {
-                        write!(tx, "Unknown Package\n\r");
+                        write!(tx, "Unknown Package\n\r").unwrap();
                     }
                 }
             }
@@ -288,7 +285,8 @@ fn radio_event() {
     });
 }
 
-fn timer0_event() {
+#[interrupt]
+fn TIMER0() {
     compiler_fence(Ordering::AcqRel);
     cortex_m::interrupt::free(|cs| {
         if let (Some(timer), Some(display)) = (
@@ -306,7 +304,8 @@ fn timer0_event() {
     });
 }
 
-fn gpiote_event() {
+#[interrupt]
+fn GPIOTE() {
     compiler_fence(Ordering::AcqRel);
     cortex_m::interrupt::free(|cs| {
         if let (Some(btn), Some(state)) = (

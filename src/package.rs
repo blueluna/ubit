@@ -47,8 +47,7 @@ impl From<PackageType> for u8 {
 
 /// # Package Header
 ///
-/// The goal is to be able to communicate with software written with MakeCode
-/// or similar.
+/// The goal is to be able to communicate with software written with MakeCode.
 ///
 /// ```notrust
 /// | 0    | 1 ... 4 | 5 ... 8       | 9 ... 28

@@ -11,9 +11,15 @@ repository = "https://bitbucket.org/blueluna/ubit"
 edition = "2018"
 
 [dependencies]
-nrf51 = "0.5"
-nrf51-hal = "0.5"
 byteorder = { version = "1", default-features = false }
+
+[dependencies.nrf51]
+git = "https://github.com/blueluna/nrf51"
+features = ["rt"]
+
+[dependencies.nrf51-hal]
+git = "https://github.com/blueluna/nrf51-hal"
+features = ["rt"]
 
 [dev-dependencies]
 cortex-m = "0.5"
