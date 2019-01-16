@@ -32,6 +32,7 @@ pub type PackageBuffer = [u8; MAX_PACKAGE_SIZE];
 pub struct Radio {
     radio: RADIO,
     rx_buf: PackageBuffer,
+    tx_buf: PackageBuffer,
 }
 
 impl Radio {
@@ -73,6 +74,7 @@ impl Radio {
         Self {
             radio,
             rx_buf: [0u8; MAX_PACKAGE_SIZE],
+            tx_buf: [0u8; MAX_PACKAGE_SIZE],
         }
     }
 
@@ -109,5 +111,36 @@ impl Radio {
             }
         }
         0
+    }
+
+    pub fn send(&mut self, src: &[u8]) -> usize
+    {
+        if src.len() < MAX_PACKAGE_SIZE {
+            return 0;
+        }
+        let len = src.len() as u8;
+        compiler_fence(Ordering::AcqRel);
+        self.radio.events_disabled.reset();
+        self.radio.tasks_disable.write(|w| unsafe { w.bits(1) });
+        while self.radio.events_disabled.read().bits() == 0 {}
+
+        self.tx_buf[0] = len;
+        self.tx_buf[1..].copy_from_slice(src);
+
+        self.radio.txaddress.write(|w| unsafe { w.txaddress().bits(0) });
+        let tx_buf = &mut self.tx_buf as *mut _ as u32;
+        self.radio.packetptr.write(|w| unsafe { w.bits(tx_buf) });
+        self.radio.tasks_txen.write(|w| unsafe { w.bits(1) });
+        
+        self.radio.events_end.reset();
+        while self.radio.events_end.read().bits() == 0 {}
+
+        self.radio.events_disabled.reset();
+        self.radio.tasks_disable.write(|w| unsafe { w.bits(1) });
+        while self.radio.events_disabled.read().bits() == 0 {}
+
+        self.start_receive();
+
+        return len as usize;
     }
 }
