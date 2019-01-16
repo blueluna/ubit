@@ -12,16 +12,11 @@ edition = "2018"
 
 [dependencies]
 byteorder = { version = "1", default-features = false }
-
-[dependencies.nrf51]
-git = "https://github.com/blueluna/nrf51"
-features = ["rt"]
-
-[dependencies.nrf51-hal]
-git = "https://github.com/blueluna/nrf51-hal"
-features = ["rt"]
+nrf51 = "0.6"
+nrf51-hal = "0.6"
 
 [dev-dependencies]
 cortex-m = "0.5"
 cortex-m-rt = "0.6"
 panic-semihosting = "0.5"
+cortex-m-rtfm = "0.4"
